@@ -270,36 +270,71 @@ def handle_audio(update, context):
     try:
         update.message.reply_text("جاري تحويل الصوت إلى نص...")
         
+        audio_file = None
+        original_suffix = '.ogg'
+        
         if update.message.audio:
             audio_file = update.message.audio.get_file()
+            original_suffix = '.mp3'
         elif update.message.voice:
             audio_file = update.message.voice.get_file()
+            original_suffix = '.ogg'
         else:
-            update.message.reply_text("نوع الملف غير مدعوم.")
+            update.message.reply_text("نوع الملف غير مدعوم. يرجى إرسال ملف صوتي.")
             return
         
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
+        with tempfile.NamedTemporaryFile(suffix=original_suffix, delete=False) as temp_audio:
             audio_file.download(temp_audio.name)
             
-            # Convert to WAV if needed
-            wav_path = temp_audio.name.replace('.ogg', '.wav').replace('.mp3', '.wav')
-            subprocess.run(['ffmpeg', '-i', temp_audio.name, wav_path], check=True)
+            # Convert to WAV format for speech recognition
+            wav_path = temp_audio.name.replace(original_suffix, '.wav')
             
-            # Speech to text
+            # Use ffmpeg to convert audio to WAV format with proper settings
+            subprocess.run([
+                'ffmpeg', '-i', temp_audio.name, 
+                '-acodec', 'pcm_s16le', 
+                '-ar', '16000', 
+                '-ac', '1', 
+                wav_path
+            ], check=True, capture_output=True)
+            
+            # Speech to text recognition
             r = sr.Recognizer()
+            r.energy_threshold = 300
+            
             with sr.AudioFile(wav_path) as source:
+                # Adjust for ambient noise
+                r.adjust_for_ambient_noise(source, duration=0.5)
                 audio_data = r.record(source)
-                text = r.recognize_google(audio_data, language='ar-SA')
+                
+                try:
+                    # Try Arabic first
+                    text = r.recognize_google(audio_data, language='ar-SA')
+                except sr.UnknownValueError:
+                    try:
+                        # Try English as fallback
+                        text = r.recognize_google(audio_data, language='en-US')
+                    except sr.UnknownValueError:
+                        text = "لم يتم التعرف على أي كلام في الملف الصوتي."
+                except sr.RequestError as e:
+                    text = f"خطأ في الخدمة: {str(e)}"
             
-            update.message.reply_text(f"النص المستخرج:\n\n{text}")
+            if text and text != "لم يتم التعرف على أي كلام في الملف الصوتي.":
+                update.message.reply_text(f"النص المستخرج:\n\n{text}")
+            else:
+                update.message.reply_text("لم يتم التعرف على أي كلام واضح في الملف الصوتي. تأكد من وضوح الصوت وجودة التسجيل.")
             
+            # Clean up files
             os.unlink(temp_audio.name)
-            if wav_path != temp_audio.name:
+            if os.path.exists(wav_path):
                 os.unlink(wav_path)
         
         clear_user_operation(user_id)
         update.message.reply_text("اختر عملية أخرى:", reply_markup=build_main_keyboard())
         
+    except subprocess.CalledProcessError as e:
+        update.message.reply_text("حدث خطأ في تحويل تنسيق الملف الصوتي. تأكد من أن الملف صحيح.")
+        clear_user_operation(user_id)
     except Exception as e:
         update.message.reply_text(f"حدث خطأ في تحويل الصوت: {str(e)}")
         clear_user_operation(user_id)
