@@ -18,3 +18,7 @@ docx
 fitz
 opencv-python
 telegram
+pytesseract
+python-dotenv
+pytesseract
+python-dotenv
