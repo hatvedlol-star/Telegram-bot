@@ -50,3 +50,67 @@ def build_cancel_keyboard():
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 def is_user_busy(user_id):
+    return user_id in user_operations
+
+def set_user_operation(user_id, operation):
+    user_operations[user_id] = operation
+
+def clear_user_operation(user_id):
+    if user_id in user_operations:
+        del user_operations[user_id]
+
+def start(update, context):
+    user_id = update.effective_user.id
+    
+    if not is_subscribed(context.bot, user_id):
+        show_subscription_message(update)
+        return
+    
+    clear_user_operation(user_id)
+    update.message.reply_text(
+        "مرحباً! اختر العملية التي تريد تنفيذها:",
+        reply_markup=build_main_keyboard()
+    )
+
+def handle_message(update, context):
+    user_id = update.effective_user.id
+    text = update.message.text
+    
+    if not is_subscribed(context.bot, user_id):
+        show_subscription_message(update)
+        return
+    
+    if text == "🛑 إيقاف العملية":
+        clear_user_operation(user_id)
+        update.message.reply_text("تم إيقاف العملية.", reply_markup=build_main_keyboard())
+        return
+    
+    # Handle main menu options
+    if text == "🎬 فيديو ⬅️ صوت":
+        set_user_operation(user_id, "video_to_audio")
+        update.message.reply_text("أرسل الفيديو الذي تريد تحويله إلى صوت.", reply_markup=build_cancel_keyboard())
+    elif text == "🖼️ صور ⬅️ PDF":
+        set_user_operation(user_id, "images_to_pdf")
+        update.message.reply_text("أرسل الصور التي تريد تحويلها إلى PDF.", reply_markup=build_cancel_keyboard())
+    elif text == "📄 PDF ⬅️ Word":
+        set_user_operation(user_id, "pdf_to_word")
+        update.message.reply_text("أرسل ملف PDF الذي تريد تحويله إلى Word.", reply_markup=build_cancel_keyboard())
+    elif text == "📝 Word ⬅️ PDF":
+        set_user_operation(user_id, "word_to_pdf")
+        update.message.reply_text("أرسل ملف Word الذي تريد تحويله إلى PDF.", reply_markup=build_cancel_keyboard())
+    elif text == "🎤 صوت ⬅️ نص":
+        set_user_operation(user_id, "audio_to_text")
+        update.message.reply_text("أرسل الملف الصوتي الذي تريد تحويله إلى نص.", reply_markup=build_cancel_keyboard())
+
+def main():
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
+    
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == "__main__":
+    main()
