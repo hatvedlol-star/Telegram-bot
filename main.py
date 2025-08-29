@@ -3,7 +3,7 @@ import os
 import time
 import tempfile
 import requests
-import cv2
+
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
 import pytesseract
