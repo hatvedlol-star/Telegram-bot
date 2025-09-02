@@ -7,7 +7,7 @@ import requests
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
 import pytesseract
-import speech_recognition as sr
+import whisper
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
 import subprocess
@@ -286,55 +286,29 @@ def handle_audio(update, context):
         with tempfile.NamedTemporaryFile(suffix=original_suffix, delete=False) as temp_audio:
             audio_file.download(temp_audio.name)
             
-            # Convert to WAV format for speech recognition
-            wav_path = temp_audio.name.replace(original_suffix, '.wav')
+            # Load Whisper model (using base model for better performance)
+            model = whisper.load_model("base")
             
-            # Use ffmpeg to convert audio to WAV format with proper settings
-            subprocess.run([
-                'ffmpeg', '-i', temp_audio.name, 
-                '-acodec', 'pcm_s16le', 
-                '-ar', '16000', 
-                '-ac', '1', 
-                wav_path
-            ], check=True, capture_output=True)
+            # Transcribe audio file
+            result = model.transcribe(temp_audio.name, language='ar')
             
-            # Speech to text recognition
-            r = sr.Recognizer()
-            r.energy_threshold = 300
+            # If Arabic transcription is empty or short, try English
+            if not result["text"].strip() or len(result["text"].strip()) < 3:
+                result = model.transcribe(temp_audio.name, language='en')
             
-            with sr.AudioFile(wav_path) as source:
-                # Adjust for ambient noise
-                r.adjust_for_ambient_noise(source, duration=0.5)
-                audio_data = r.record(source)
-                
-                try:
-                    # Try Arabic first
-                    text = r.recognize_google(audio_data, language='ar-SA')
-                except sr.UnknownValueError:
-                    try:
-                        # Try English as fallback
-                        text = r.recognize_google(audio_data, language='en-US')
-                    except sr.UnknownValueError:
-                        text = "لم يتم التعرف على أي كلام في الملف الصوتي."
-                except sr.RequestError as e:
-                    text = f"خطأ في الخدمة: {str(e)}"
+            text = result["text"].strip()
             
-            if text and text != "لم يتم التعرف على أي كلام في الملف الصوتي.":
+            if text:
                 update.message.reply_text(f"النص المستخرج:\n\n{text}")
             else:
                 update.message.reply_text("لم يتم التعرف على أي كلام واضح في الملف الصوتي. تأكد من وضوح الصوت وجودة التسجيل.")
             
             # Clean up files
             os.unlink(temp_audio.name)
-            if os.path.exists(wav_path):
-                os.unlink(wav_path)
         
         clear_user_operation(user_id)
         update.message.reply_text("اختر عملية أخرى:", reply_markup=build_main_keyboard())
         
-    except subprocess.CalledProcessError as e:
-        update.message.reply_text("حدث خطأ في تحويل تنسيق الملف الصوتي. تأكد من أن الملف صحيح.")
-        clear_user_operation(user_id)
     except Exception as e:
         update.message.reply_text(f"حدث خطأ في تحويل الصوت: {str(e)}")
         clear_user_operation(user_id)
