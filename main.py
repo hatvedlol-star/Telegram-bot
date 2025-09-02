@@ -7,7 +7,7 @@ import requests
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter
 import pytesseract
-import whisper
+import speech_recognition as sr
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
 import subprocess
@@ -286,17 +286,31 @@ def handle_audio(update, context):
         with tempfile.NamedTemporaryFile(suffix=original_suffix, delete=False) as temp_audio:
             audio_file.download(temp_audio.name)
             
-            # Load Whisper model (using base model for better performance)
-            model = whisper.load_model("base")
+            # Convert audio to wav format for better compatibility
+            wav_path = temp_audio.name.replace(original_suffix, '.wav')
+            subprocess.run(['ffmpeg', '-i', temp_audio.name, '-ar', '16000', '-ac', '1', wav_path], check=True)
             
-            # Transcribe audio file
-            result = model.transcribe(temp_audio.name, language='ar')
+            # Use speech recognition
+            recognizer = sr.Recognizer()
             
-            # If Arabic transcription is empty or short, try English
-            if not result["text"].strip() or len(result["text"].strip()) < 3:
-                result = model.transcribe(temp_audio.name, language='en')
+            with sr.AudioFile(wav_path) as source:
+                audio_data = recognizer.record(source)
+                
+                # Try Arabic first
+                try:
+                    text = recognizer.recognize_google(audio_data, language='ar-SA')
+                except sr.UnknownValueError:
+                    try:
+                        # Try English if Arabic fails
+                        text = recognizer.recognize_google(audio_data, language='en-US')
+                    except sr.UnknownValueError:
+                        text = ""
+                except sr.RequestError:
+                    text = ""
             
-            text = result["text"].strip()
+            # Clean up wav file
+            if os.path.exists(wav_path):
+                os.unlink(wav_path)
             
             if text:
                 update.message.reply_text(f"النص المستخرج:\n\n{text}")
